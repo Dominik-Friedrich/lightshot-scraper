@@ -1,5 +1,6 @@
 import logging
 import math
+import random
 
 from PIL import ImageChops, Image
 
@@ -14,26 +15,47 @@ SETTING_PATH = "settings.txt"
 IMG_PATH = "E:\Stuff\lightshot-scraper-images"
 TEMP_PATH = "./temp"
 WEB_PATH = "https://prnt.sc/"
-# LIMIT = 500000
-
-# some starting binary data of the removed screenshot image
-REMOVED_IMG = None
-count = 0
-valid_chars = {}
-
-def saveCount():
-    settings_file = open(SETTING_PATH, "w")
-    # print("Saving count: " + str(count))
-    settings_file.write(str(count))
 
 
-def loadCount():
-    count = 0
+def loadValidCharacters():
+    chars = ""
     try:
         settings_file = open(SETTING_PATH, "r")
-        count = int(settings_file.readline())
+        chars = settings_file.readline()
     finally:
-        return count
+        return chars
+
+
+def generateRandUrl(characters, length):
+    url = ""
+    for i in range(length):
+        url += random.choice(characters)
+    return url
+
+
+def loadFilterImages(path):
+    filter_images = []
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            filter_images.append(str(root) + "/" + str(file))
+    return filter_images
+
+
+def deleteImage(filter_images, cmp_img_path):
+    delete = False
+    try:
+        cmp = Image.open(cmp_img_path)
+        for img_path in filter_images:
+            tmp = Image.open(img_path)
+            if rmsdiff(cmp, tmp) <= 0:
+                delete = True
+            tmp.close()
+            if delete:
+                break
+        cmp.close()
+    except:
+        logging.exception("Shitty image paths")
+    return delete
 
 
 def saveImage(path, img):
@@ -57,21 +79,6 @@ def init(driver):
     except:
         logging.exception("Stupid cookie banner")
 
-    # Find removed screenshot img
-    driver.get("https://prnt.sc/0")
-    try:
-        global REMOVED_IMG
-        delete_name = "delete_tmp.png"
-        saveImage(TEMP_PATH + "/" + delete_name,
-                  driver.find_element(By.XPATH, "/html/body/div[4]/div/div/img").screenshot_as_png)
-        REMOVED_IMG = Image.open(TEMP_PATH + "/" + delete_name)
-    except:
-        logging.exception("Screenshot removed image wasn't found")
-
-
-def asHex(number):
-    return hex(number).replace('0x', '')
-
 
 def rmsdiff(im1, im2):
     """ Calculate the root-mean-square difference between two images
@@ -86,34 +93,33 @@ def rmsdiff(im1, im2):
 
 
 def main():
-    global count, REMOVED_IMG
-    count = loadCount()
-    print("Starting count: " + str(count))
+    valid_chars = loadValidCharacters()
+    filter_images = loadFilterImages(TEMP_PATH)
+
     driver = webdriver.Firefox()
 
     init(driver)
 
-    # max len of string to compare
-    max_string_len = 1000
+    url_length = 6
+
+    count = 0
     while 1:
         try:
-            url = WEB_PATH + asHex(count)
-            print(url)
+            url_end = generateRandUrl(valid_chars, url_length)
+            url = WEB_PATH + url_end
+
             driver.get(url)
 
-            path = IMG_PATH + "/" + "img_" + str(count) + ".png"
+            path = IMG_PATH + "/" + "img_" + url_end + ".png"
             saveImage(path, driver.find_element(By.XPATH, "/html/body/div[4]/div/div/img").screenshot_as_png)
-            tmp = Image.open(path)
-            saveCount()
-            # compares first n characters, n chosen arbitrarily above
-            if rmsdiff(tmp, REMOVED_IMG) <= 0:
-                print(rmsdiff(tmp, REMOVED_IMG))
-                tmp.close()
+
+            print(str(count) + ": " + url)
+
+            if deleteImage(filter_images, path):
                 os.remove(path)
 
         except:
-            logging.exception("Error on website open?")
-
+            continue
         count = count + 1
 
     driver.close()
