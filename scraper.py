@@ -119,6 +119,7 @@ def main():
                 os.remove(path)
 
         except:
+            logging.exception("Stupid cookie banner")
             continue
         count = count + 1
 
